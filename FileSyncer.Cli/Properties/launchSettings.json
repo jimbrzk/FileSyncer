@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "FileSyncer.Cli": {
+      "commandName": "Project",
+      "commandLineArgs": "--Source \"D:\\repo\\FileSyncer\\FileSyncer.Cli\\bin\\Debug\\net8.0\\a\" --Target \"D:\\repo\\FileSyncer\\FileSyncer.Cli\\bin\\Debug\\net8.0\\b\" --CopyAcl --CopyDates --LogFile sync.log --Include TEST,TEST0 --DryRun"
+    }
+  }
+}
