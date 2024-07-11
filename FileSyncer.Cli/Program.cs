@@ -329,14 +329,14 @@ namespace FileSyncer.Cli
 
                 if (progress != lastProgress)
                 {
-                    Console.Write($"\rProgress: {progress}%, Speed: {FormatBytes((long)speed)}, Transfered: {FormatBytes(totalRead)}");
+                    Console.Write($"\rProgress: {progress}%, Speed: {FormatBytes((long)speed)}/s, Transfered: {FormatBytes(totalRead)}");
                     lastProgress = progress;
                 }
             }
 
             // Ensure the final 100% progress is printed
             stopwatch.Stop();
-            Console.WriteLine($"\rProgress: 100%, Speed: {FormatBytes((long)(totalRead / stopwatch.Elapsed.TotalSeconds))}, Transfered: {FormatBytes(totalRead)}");
+            Console.WriteLine($"\rProgress: 100%, Speed: {FormatBytes((long)(totalRead / stopwatch.Elapsed.TotalSeconds))}/s, Transfered: {FormatBytes(totalRead)} Time: {stopwatch.Elapsed}");
         }
     }
 }
