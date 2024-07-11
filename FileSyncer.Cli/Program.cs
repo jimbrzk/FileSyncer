@@ -16,13 +16,13 @@ namespace FileSyncer.Cli
 
         private static bool _dryRun;
 
-        private static Int64 _synced { get; set; }
-        private static Int64 _toSync { get; set; }
-        private static Int64 _removed { get; set; }
-        private static Int64 _toRemove { get; set; }
-        private static Int64 _errors { get; set; }
+        private static long _synced { get; set; }
+        private static long _toSync { get; set; }
+        private static long _removed { get; set; }
+        private static long _toRemove { get; set; }
+        private static long _errors { get; set; }
 
-        private static Int64 _requiredTargetFreeSpace { get; set; }
+        private static long _requiredTargetFreeSpace { get; set; }
 
         static void Main(string[] args)
         {
@@ -53,21 +53,16 @@ namespace FileSyncer.Cli
                     + $"{Environment.NewLine} - Ignore: {((_ignore?.Any() ?? false) ? string.Join(",", _ignore) : "NONE")}");
                 Console.WriteLine();
 
-                _synced = 0;
-                _toSync = 0;
-                _removed = 0;
-                _toRemove = 0;
-                _errors = 0;
-                _requiredTargetFreeSpace = 0;
+                ResetCounters();
 
                 stopwatch.Start();
 
-                Log("Removing files that not present on source but founded at target");
+                Log("Removing files that are not present on source but found at target");
                 RemoveOrphanFiles(sourcePath, targetPath, _dryRun);
 
                 Console.WriteLine();
 
-                Log("Sycning files from source to target");
+                Log("Syncing files from source to target");
                 SyncFiles(sourcePath, targetPath, _dryRun, copyAcl, copyDates);
             }
             catch (Exception ex)
@@ -86,15 +81,24 @@ namespace FileSyncer.Cli
             }
         }
 
+        private static void ResetCounters()
+        {
+            _synced = 0;
+            _toSync = 0;
+            _removed = 0;
+            _toRemove = 0;
+            _errors = 0;
+            _requiredTargetFreeSpace = 0;
+        }
+
         static void Log(string message, string? fileLogMessage = null)
         {
-            if (String.IsNullOrEmpty(fileLogMessage))
-                fileLogMessage = message;
+            fileLogMessage ??= message;
 
-            if (!String.IsNullOrEmpty(_logPath))
+            if (!string.IsNullOrEmpty(_logPath))
             {
-                if (_logStream == null) _logStream = File.Open(_logPath, FileMode.Append, FileAccess.Write);
-                if ((_logStream?.CanWrite ?? false))
+                if (_logStream == null) _logStream = File.Open(_logPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                if (_logStream?.CanWrite ?? false)
                 {
                     var buffer = Encoding.UTF8.GetBytes(fileLogMessage + Environment.NewLine);
                     _logStream.Write(buffer);
@@ -109,11 +113,7 @@ namespace FileSyncer.Cli
 
         static long GetDirectoryFreeSpace(string directoryPath, out string textRepresentation)
         {
-            string root = Path.GetPathRoot(directoryPath);
-            if (string.IsNullOrEmpty(root))
-            {
-                throw new ArgumentException("Invalid directory path", nameof(directoryPath));
-            }
+            string root = Path.GetPathRoot(directoryPath) ?? throw new ArgumentException("Invalid directory path", nameof(directoryPath));
 
             DriveInfo drive = new DriveInfo(root);
 
@@ -140,15 +140,18 @@ namespace FileSyncer.Cli
 
         static string GetFromArgsOrPrompt(Dictionary<string, string> argsDict, string key, bool required = true)
         {
-            string val = argsDict.TryGetValue(key, out var value) ? value : null;
-
-            if (string.IsNullOrEmpty(val) && required)
+            if (argsDict.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value))
             {
-                Console.WriteLine($"{key}: ");
-                val = Console.ReadLine();
+                return value;
             }
 
-            return val;
+            if (required)
+            {
+                Console.WriteLine($"{key}: ");
+                value = Console.ReadLine();
+            }
+
+            return value ?? string.Empty;
         }
 
         static bool IsIgnored(string path)
@@ -196,7 +199,7 @@ namespace FileSyncer.Cli
             Log($"Required storage space: {FormatBytes(_requiredTargetFreeSpace)} Free target space: {freeSpaceText}");
 
             if (_requiredTargetFreeSpace > freeSpace)
-                throw new IOException($"Target directory has not enough free storage space!");
+                throw new IOException($"Target directory does not have enough free storage space!");
 
             foreach (var file in toSync)
             {
@@ -249,7 +252,7 @@ namespace FileSyncer.Cli
 
         static void SyncFile(string file, string sourcePath, string targetPath, bool dryRun, bool copyAcl, bool copyDates)
         {
-            var tmpTargetPath = Path.Combine(Path.GetDirectoryName(file.Replace(sourcePath, targetPath)), $"{Path.GetFileName(file)}.tmp");
+            var tmpTargetPath = Path.Combine(Path.GetDirectoryName(file.Replace(sourcePath, targetPath)) ?? string.Empty, $"{Path.GetFileName(file)}.tmp");
             var finalTargetPath = file.Replace(sourcePath, targetPath);
 
             Log($"- Syncing [{(_synced + 1)}/{_toSync}]: {file.Replace(sourcePath, string.Empty).TrimStart('/').TrimStart('\\')}");
@@ -258,11 +261,12 @@ namespace FileSyncer.Cli
             {
                 if (!dryRun)
                 {
-                    if (!Directory.Exists(Path.GetDirectoryName(tmpTargetPath)))
-                        Directory.CreateDirectory(Path.GetDirectoryName(tmpTargetPath));
+                    var targetDirectory = Path.GetDirectoryName(tmpTargetPath);
+                    if (!string.IsNullOrEmpty(targetDirectory) && !Directory.Exists(targetDirectory))
+                        Directory.CreateDirectory(targetDirectory);
 
-                    using (var fsSource = File.OpenRead(file))
-                    using (var fsTarget = File.Create(tmpTargetPath))
+                    using (var fsSource = File.Open(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    using (var fsTarget = File.Open(tmpTargetPath, FileMode.Create, FileAccess.ReadWrite))
                     {
                         CopyWithProgress(fsSource, fsTarget, fsSource.Length);
                     }
@@ -294,15 +298,22 @@ namespace FileSyncer.Cli
             }
         }
 
-        static void CopyWithProgress(Stream source, Stream target, long totalBytes)
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="source">Source stream</param>
+        /// <param name="target">Target stream</param>
+        /// <param name="totalBytes">Total source size</param>
+        /// <param name="bufferSize">Buffer size (Default: 81920 = 80 KB)</param>
+        static void CopyWithProgress(Stream source, Stream target, long totalBytes, int bufferSize = 81920)
         {
-            byte[] buffer = new byte[81920]; // 80 KB buffer
+            byte[] buffer = new byte[bufferSize];
             long totalRead = 0;
             int read;
             int lastProgress = 0;
 
             // Stopwatch to measure time
-            Stopwatch stopwatch = new Stopwatch();
+            var stopwatch = new Stopwatch();
             stopwatch.Start();
 
             while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
@@ -318,14 +329,14 @@ namespace FileSyncer.Cli
 
                 if (progress != lastProgress)
                 {
-                    Console.Write($"\rProgress: {progress}%, Speed: {FormatBytes((long)speed)}");
+                    Console.Write($"\rProgress: {progress}%, Speed: {FormatBytes((long)speed)}, Transfered: {FormatBytes(totalRead)}");
                     lastProgress = progress;
                 }
             }
 
             // Ensure the final 100% progress is printed
             stopwatch.Stop();
-            Console.WriteLine($"\rProgress: 100%, Speed: {FormatBytes((long)(totalRead / stopwatch.Elapsed.TotalSeconds))}");
+            Console.WriteLine($"\rProgress: 100%, Speed: {FormatBytes((long)(totalRead / stopwatch.Elapsed.TotalSeconds))}, Transfered: {FormatBytes(totalRead)}");
         }
     }
 }
