@@ -336,7 +336,8 @@ namespace FileSyncer.Cli
 
             // Ensure the final 100% progress is printed
             stopwatch.Stop();
-            Console.WriteLine($"\rProgress: 100%, Speed: {FormatBytes((long)(totalRead / stopwatch.Elapsed.TotalSeconds))}/s, Transfered: {FormatBytes(totalRead)} Time: {stopwatch.Elapsed}");
+            Log($"\rProgress: 100%, Speed: {FormatBytes((long)(totalRead / stopwatch.Elapsed.TotalSeconds))}/s, Transfered: {FormatBytes(totalRead)} Time: {stopwatch.Elapsed}",
+                $"Speed: {FormatBytes((long)(totalRead / stopwatch.Elapsed.TotalSeconds))}/s, Transfered: {FormatBytes(totalRead)} Time: {stopwatch.Elapsed}");
         }
     }
 }
